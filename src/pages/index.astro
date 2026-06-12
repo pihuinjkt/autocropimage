@@ -1,0 +1,200 @@
+---
+// src/pages/index.astro
+---
+
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPM Tools - Clean Mouse Auto-Cropper</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background-color: #f3f4f6;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .container {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        max-width: 700px;
+        width: 100%;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      .upload-box {
+        border: 2px dashed #cbd5e1;
+        padding: 2rem;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-bottom: 1.5rem;
+        width: 100%;
+        box-sizing: border-box;
+        background-color: #f8fafc;
+      }
+      /* Mengunci aspek rasio kanvas hitam agar pas 1200x628 secara visual */
+      cropper-canvas {
+        width: 100%;
+        aspect-ratio: 1200 / 628; 
+        background-color: #1e293b; 
+        margin-bottom: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        display: none;
+        overflow: hidden;
+      }
+      .btn {
+        background-color: #2563eb;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+        margin-bottom: 1.5rem;
+        width: 100%;
+      }
+      .btn:hover {
+        background-color: #1d4ed8;
+      }
+      #resultPreview {
+        margin-top: 1.5rem;
+        display: none;
+        width: 100%;
+      }
+      #resultPreview img {
+        width: 100%;
+        aspect-ratio: 1200 / 628;
+        object-fit: cover;
+        border: 2px solid #10b981;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="container">
+      <h2>EPM Image Auto-Cropper (v2)</h2>
+      <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem;">
+        <b>Klik Kiri + Geser Mouse</b> untuk memindahkan foto. Gunakan <b>Scroll Mouse</b> untuk Zoom secara halus.
+      </p>
+
+      <div class="upload-box" id="dropZone">
+        <p id="uploadText">Klik di sini untuk pilih foto</p>
+        <input type="file" id="imageInput" accept="image/*" style="display: none;" />
+      </div>
+
+      <cropper-canvas id="cropperCanvas" background action="move" view-mode="1" wheel-zoom-ratio="0.02">
+        <cropper-image id="cropperImage" src="" alt="Source Image" rotatable scalable></cropper-image>
+      </cropper-canvas>
+
+      <button id="cropBtn" class="btn" style="display: none;">Potong & Proses Preview</button>
+
+      <div id="resultPreview">
+        <h4 style="color: #10b981; margin-bottom: 0.5rem;">Hasil Crop (Siap Kirim 1200x628):</h4>
+        <img id="croppedOutput" src="" alt="Hasil Akhir" />
+      </div>
+    </div>
+
+    <script>
+      // @ts-ignore
+      import 'cropperjs';
+
+      const imageInput = document.getElementById('imageInput') as HTMLInputElement;
+      const cropperCanvas = document.getElementById('cropperCanvas') as any;
+      const cropperImage = document.getElementById('cropperImage') as any;
+      const cropBtn = document.getElementById('cropBtn') as HTMLButtonElement;
+      const resultPreview = document.getElementById('resultPreview') as HTMLDivElement;
+      const croppedOutput = document.getElementById('croppedOutput') as HTMLImageElement;
+      const uploadText = document.getElementById('uploadText') as HTMLParagraphElement;
+      const dropZone = document.getElementById('dropZone') as HTMLDivElement;
+
+      dropZone.addEventListener('click', () => imageInput.click());
+
+      imageInput.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const files = target.files;
+        
+        if (files && files.length > 0) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (!event.target || typeof event.target.result !== 'string') return;
+            
+            // Bersihkan seleksi lama agar tidak bertumpuk
+            const oldSelection = cropperCanvas.querySelector('cropper-selection');
+            if (oldSelection) {
+              oldSelection.remove();
+            }
+
+            cropperImage.src = event.target.result;
+            cropperCanvas.style.display = 'block';
+            
+            setTimeout(async () => {
+              // PERUBAHAN STRUKTUR SCRIPT:
+              // Kita buat seleksi transparan tanpa ornamen grid/crosshair di dalamnya
+              const cropperSelection = document.createElement('cropper-selection');
+              cropperSelection.setAttribute('aspect-ratio', '1.9108'); 
+              cropperSelection.setAttribute('initial-coverage', '1');   
+              cropperSelection.setAttribute('movable', 'false');       
+              cropperSelection.setAttribute('resizable', 'false');     
+
+              cropperCanvas.appendChild(cropperSelection);
+
+              // Sinkronisasi layout geometri viewport Cropper v2
+              await cropperCanvas.$cover();
+            }, 100);
+
+            cropBtn.style.display = 'block';
+            uploadText.innerText = `File terpilih: ${files[0].name}`;
+          };
+          reader.readAsDataURL(files[0]);
+        }
+      });
+
+      // Proses pemotongan presisi tinggi menggunakan proxy canvas
+      cropBtn.addEventListener('click', async () => {
+        const activeSelection = cropperCanvas.querySelector('cropper-selection') as any;
+        if (!activeSelection) return;
+
+        try {
+          const canvas = await activeSelection.$toCanvas({
+            beforeDraw(context: CanvasRenderingContext2D) {
+              context.imageSmoothingEnabled = true;
+              context.imageSmoothingQuality = 'high';
+            }
+          });
+
+          if (canvas) {
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = 1200;
+            finalCanvas.height = 628;
+            const ctx = finalCanvas.getContext('2d');
+
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(canvas, 0, 0, 1200, 628);
+            }
+
+            const croppedDataUrl = finalCanvas.toDataURL('image/jpeg', 0.9);
+            croppedOutput.src = croppedDataUrl;
+            resultPreview.style.display = 'block';
+
+            finalCanvas.toBlob((blob: Blob | null) => {
+              if (blob) {
+                console.log("Kemenangan EPM Mutlak! Ukuran eksak 1200x628:", blob);
+              }
+            }, 'image/jpeg', 0.9);
+          }
+        } catch (error) {
+          console.error("Gagal melakukan crop gambar:", error);
+        }
+      });
+    </script>
+  </body>
+</html>
